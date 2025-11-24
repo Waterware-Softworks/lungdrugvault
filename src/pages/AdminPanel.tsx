@@ -8,8 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Shield, ArrowLeft, KeyRound } from "lucide-react";
+import { Shield, ArrowLeft, KeyRound, Megaphone, Wrench } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface UserData {
   id: string;
@@ -26,6 +29,12 @@ const AdminPanel = () => {
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState("");
+  const [announcementEnabled, setAnnouncementEnabled] = useState(false);
+  const [announcementMessage, setAnnouncementMessage] = useState("");
+  const [announcementType, setAnnouncementType] = useState<"info" | "warning" | "error">("info");
 
   useEffect(() => {
     if (!adminLoading && !isAdmin) {
@@ -37,8 +46,36 @@ const AdminPanel = () => {
   useEffect(() => {
     if (isAdmin) {
       fetchUsers();
+      fetchSystemSettings();
     }
   }, [isAdmin]);
+
+  const fetchSystemSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("system_settings")
+        .select("*");
+
+      if (error) throw error;
+
+      data?.forEach((setting) => {
+        if (typeof setting.value === 'object' && setting.value !== null) {
+          const value = setting.value as Record<string, unknown>;
+          
+          if (setting.key === "maintenance_mode") {
+            setMaintenanceEnabled(Boolean(value.enabled));
+            setMaintenanceMessage(String(value.message || ""));
+          } else if (setting.key === "announcement") {
+            setAnnouncementEnabled(Boolean(value.enabled));
+            setAnnouncementMessage(String(value.message || ""));
+            setAnnouncementType((value.type as "info" | "warning" | "error") || "info");
+          }
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching system settings:", error);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -91,6 +128,40 @@ const AdminPanel = () => {
     }
   };
 
+  const handleUpdateMaintenance = async () => {
+    try {
+      const { error } = await supabase
+        .from("system_settings")
+        .update({
+          value: { enabled: maintenanceEnabled, message: maintenanceMessage },
+        })
+        .eq("key", "maintenance_mode");
+
+      if (error) throw error;
+      toast.success("Maintenance mode updated");
+    } catch (error) {
+      console.error("Error updating maintenance mode:", error);
+      toast.error("Failed to update maintenance mode");
+    }
+  };
+
+  const handleUpdateAnnouncement = async () => {
+    try {
+      const { error } = await supabase
+        .from("system_settings")
+        .update({
+          value: { enabled: announcementEnabled, message: announcementMessage, type: announcementType },
+        })
+        .eq("key", "announcement");
+
+      if (error) throw error;
+      toast.success("Announcement updated");
+    } catch (error) {
+      console.error("Error updating announcement:", error);
+      toast.error("Failed to update announcement");
+    }
+  };
+
   if (adminLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -124,6 +195,87 @@ const AdminPanel = () => {
               <p className="text-muted-foreground">Manage users and system settings</p>
             </div>
           </div>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 mb-6">
+          <Card className="border-border bg-card/50 backdrop-blur-sm">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Wrench className="w-5 h-5 text-primary" />
+                <CardTitle>Maintenance Mode</CardTitle>
+              </div>
+              <CardDescription>Control site access during maintenance</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="maintenance-toggle">Enable Maintenance Mode</Label>
+                <Switch
+                  id="maintenance-toggle"
+                  checked={maintenanceEnabled}
+                  onCheckedChange={setMaintenanceEnabled}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="maintenance-message">Maintenance Message</Label>
+                <Textarea
+                  id="maintenance-message"
+                  value={maintenanceMessage}
+                  onChange={(e) => setMaintenanceMessage(e.target.value)}
+                  placeholder="Enter message to display during maintenance"
+                  className="bg-secondary/50"
+                />
+              </div>
+              <Button onClick={handleUpdateMaintenance} className="w-full">
+                Update Maintenance Settings
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border bg-card/50 backdrop-blur-sm">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Megaphone className="w-5 h-5 text-primary" />
+                <CardTitle>Site Announcement</CardTitle>
+              </div>
+              <CardDescription>Display important messages to all users</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="announcement-toggle">Show Announcement</Label>
+                <Switch
+                  id="announcement-toggle"
+                  checked={announcementEnabled}
+                  onCheckedChange={setAnnouncementEnabled}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="announcement-type">Type</Label>
+                <Select value={announcementType} onValueChange={(value: "info" | "warning" | "error") => setAnnouncementType(value)}>
+                  <SelectTrigger className="bg-secondary/50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="error">Error</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="announcement-message">Announcement Message</Label>
+                <Textarea
+                  id="announcement-message"
+                  value={announcementMessage}
+                  onChange={(e) => setAnnouncementMessage(e.target.value)}
+                  placeholder="Enter announcement message"
+                  className="bg-secondary/50"
+                />
+              </div>
+              <Button onClick={handleUpdateAnnouncement} className="w-full">
+                Update Announcement
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         <Card className="border-border bg-card/50 backdrop-blur-sm">
