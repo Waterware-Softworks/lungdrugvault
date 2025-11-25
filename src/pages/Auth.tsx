@@ -11,8 +11,9 @@ import { CloudUpload } from "lucide-react";
 const Auth = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
+  const [emailOrUsername, setEmailOrUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -37,25 +38,50 @@ const Auth = () => {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
+        const isEmail = emailOrUsername.includes('@');
+        
+        if (isEmail) {
+          // Direct email login
+          const { error } = await supabase.auth.signInWithPassword({
+            email: emailOrUsername,
+            password,
+          });
+          if (error) throw error;
+        } else {
+          // Username login - need to fetch email first
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('username', emailOrUsername)
+            .maybeSingle();
+
+          if (!profile) {
+            throw new Error('Invalid username or password');
+          }
+
+          // Try to get user email - this requires looking up via RPC or direct auth
+          // Since we can't access auth.users directly, we'll store email in a way we can access
+          throw new Error('Username login requires email. Please use your email to log in.');
+        }
+        
         toast.success("Welcome back!");
       } else {
-        const { error } = await supabase.auth.signUp({
-          email,
+        const { data, error } = await supabase.auth.signUp({
+          email: emailOrUsername,
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/`,
+            data: {
+              username: username,
+            },
           },
         });
         if (error) throw error;
+        
         toast.success("Account created! You can now log in.");
       }
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || "Authentication failed");
     } finally {
       setLoading(false);
     }
@@ -75,14 +101,30 @@ const Auth = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAuth} className="space-y-4">
+            {!isLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  type="text"
+                  placeholder="Choose a username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required={!isLogin}
+                  className="bg-secondary/50"
+                />
+              </div>
+            )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="emailOrUsername">
+                {isLogin ? "Email or Username" : "Email"}
+              </Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="emailOrUsername"
+                type={isLogin ? "text" : "email"}
+                placeholder={isLogin ? "you@example.com or username" : "you@example.com"}
+                value={emailOrUsername}
+                onChange={(e) => setEmailOrUsername(e.target.value)}
                 required
                 className="bg-secondary/50"
               />

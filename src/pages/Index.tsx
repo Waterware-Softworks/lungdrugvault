@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { FileUpload } from "@/components/FileUpload";
 import { FileGrid } from "@/components/FileGrid";
 import { Button } from "@/components/ui/button";
-import { CloudUpload, LogOut, Shield } from "lucide-react";
+import { CloudUpload, LogOut, Shield, Settings } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const Index = () => {
@@ -38,7 +38,13 @@ const Index = () => {
       setLoading(true);
       const { data, error } = await supabase
         .from('files')
-        .select('*')
+        .select(`
+          *,
+          profiles:user_id (
+            username,
+            avatar_url
+          )
+        `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -76,6 +82,14 @@ const Index = () => {
                 Admin Panel
               </Button>
             )}
+            <Button
+              variant="outline"
+              onClick={() => navigate("/settings")}
+              className="gap-2 border-border hover:bg-secondary"
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </Button>
             <Button
               variant="ghost"
               onClick={handleSignOut}
