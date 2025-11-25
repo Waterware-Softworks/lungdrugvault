@@ -35,6 +35,11 @@ interface File {
   mime_type: string;
   storage_path: string;
   created_at: string;
+  user_id: string;
+  profiles?: {
+    username: string | null;
+    avatar_url: string | null;
+  };
 }
 
 interface FileGridProps {
@@ -153,9 +158,16 @@ export const FileGrid = ({ files, onFileDeleted }: FileGridProps) => {
             <h3 className="font-semibold truncate mb-1" title={file.name}>
               {file.name}
             </h3>
-            <p className="text-sm text-muted-foreground">
-              {formatFileSize(file.size)}
-            </p>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">
+                {formatFileSize(file.size)}
+              </p>
+              {file.profiles?.username && (
+                <p className="text-xs text-muted-foreground">
+                  By @{file.profiles.username}
+                </p>
+              )}
+            </div>
           </CardContent>
           <CardFooter className="flex gap-2 p-4 pt-0">
             <Button

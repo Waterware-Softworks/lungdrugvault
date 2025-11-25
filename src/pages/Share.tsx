@@ -22,7 +22,13 @@ const Share = () => {
         .from('file_shares')
         .select(`
           *,
-          files (*)
+          files (
+            *,
+            profiles:user_id (
+              username,
+              avatar_url
+            )
+          )
         `)
         .eq('share_token', token)
         .single();
@@ -109,6 +115,11 @@ const Share = () => {
           <div className="text-center space-y-2">
             <h3 className="font-semibold text-lg">{file.name}</h3>
             <p className="text-sm text-muted-foreground">{formatFileSize(file.size)}</p>
+            {file.profiles?.username && (
+              <p className="text-xs text-muted-foreground">
+                Shared by @{file.profiles.username}
+              </p>
+            )}
           </div>
           <Button
             onClick={downloadFile}
