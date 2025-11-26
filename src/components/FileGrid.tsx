@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { FileIcon, Trash2, Share2, Download, Copy, Check } from "lucide-react";
+import { FileIcon, Trash2, Share2, Download, Copy, Check, Users } from "lucide-react";
 import { Button } from "./ui/button";
 import {
   Card,
@@ -45,9 +45,31 @@ interface File {
 interface FileGridProps {
   files: File[];
   onFileDeleted: () => void;
+  isSharedView?: boolean;
 }
 
-export const FileGrid = ({ files, onFileDeleted }: FileGridProps) => {
+export const FileGrid = ({ files, onFileDeleted, isSharedView = false }: FileGridProps) => {
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [shareEmail, setShareEmail] = useState("");
+  const [users, setUsers] = useState<any[]>([]);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username');
+      
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (error) {
+      console.error("Error loading users:", error);
+    }
+  };
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [shareLink, setShareLink] = useState<string>("");
   const [copied, setCopied] = useState(false);
@@ -215,6 +237,84 @@ export const FileGrid = ({ files, onFileDeleted }: FileGridProps) => {
                 )}
               </DialogContent>
             </Dialog>
+            
+            {!isSharedView && (
+              <Dialog open={shareDialogOpen && selectedFile?.id === file.id} onOpenChange={(open) => {
+                setShareDialogOpen(open);
+                if (!open) {
+                  setSelectedFile(null);
+                  setShareEmail("");
+                }
+              }}>
+                <DialogTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="flex-1 hover:bg-primary/10 hover:text-primary"
+                    onClick={() => setSelectedFile(file)}
+                  >
+                    <Users className="w-4 h-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="bg-card border-border">
+                  <DialogHeader>
+                    <DialogTitle>Share with User</DialogTitle>
+                    <DialogDescription>
+                      Share this file with another user on the platform
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium">Select User</label>
+                      <select 
+                        className="w-full mt-2 px-3 py-2 bg-secondary/50 border border-border rounded-lg"
+                        value={shareEmail}
+                        onChange={(e) => setShareEmail(e.target.value)}
+                      >
+                        <option value="">Choose a user...</option>
+                        {users.map(user => (
+                          <option key={user.id} value={user.id}>
+                            {user.username || 'No username'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <Button 
+                      className="w-full"
+                      onClick={async () => {
+                        if (!shareEmail || !selectedFile) return;
+                        
+                        try {
+                          const { data: { user } } = await supabase.auth.getUser();
+                          if (!user) return;
+
+                          const { error } = await supabase
+                            .from('shared_items')
+                            .insert({
+                              item_type: 'file',
+                              item_id: selectedFile.id,
+                              shared_by_user_id: user.id,
+                              shared_with_user_id: shareEmail,
+                            });
+
+                          if (error) throw error;
+                          
+                          toast.success("File shared successfully!");
+                          setShareDialogOpen(false);
+                          setSelectedFile(null);
+                          setShareEmail("");
+                        } catch (error: any) {
+                          toast.error(error.message || "Failed to share file");
+                        }
+                      }}
+                    >
+                      Share File
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+            
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button

@@ -8,6 +8,7 @@ import Auth from "./pages/Auth";
 import Share from "./pages/Share";
 import AdminPanel from "./pages/AdminPanel";
 import Settings from "./pages/Settings";
+import SharedWithMe from "./pages/SharedWithMe";
 import NotFound from "./pages/NotFound";
 import Maintenance from "./pages/Maintenance";
 import { MaintenanceGuard } from "./components/MaintenanceGuard";
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/admin" element={<AdminPanel />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/shared" element={<SharedWithMe />} />
             <Route path="/share/:token" element={<Share />} />
             <Route path="/maintenance" element={<Maintenance />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
