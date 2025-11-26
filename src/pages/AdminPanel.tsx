@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Shield, ArrowLeft, KeyRound, Megaphone, Wrench } from "lucide-react";
+import { Shield, ArrowLeft, KeyRound, Megaphone, Wrench, UserCog } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +18,8 @@ interface UserData {
   id: string;
   email: string;
   created_at: string;
-  last_sign_in_at: string;
+  last_sign_in_at: string | null;
+  isAdmin: boolean;
 }
 
 const AdminPanel = () => {
@@ -79,23 +80,35 @@ const AdminPanel = () => {
 
   const fetchUsers = async () => {
     try {
-      const { data: { users: authUsers }, error } = await supabase.auth.admin.listUsers();
-      
+      const { data, error } = await supabase.functions.invoke('admin-operations', {
+        body: { action: 'list_users' },
+      });
+
       if (error) throw error;
-
-      const formattedUsers: UserData[] = authUsers.map(user => ({
-        id: user.id,
-        email: user.email || "No email",
-        created_at: user.created_at,
-        last_sign_in_at: user.last_sign_in_at || "Never",
-      }));
-
-      setUsers(formattedUsers);
+      
+      setUsers(data.users || []);
     } catch (error: any) {
       console.error("Error fetching users:", error);
       toast.error("Failed to load users");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleAdmin = async (userId: string, currentlyAdmin: boolean) => {
+    try {
+      const action = currentlyAdmin ? 'revoke_admin' : 'grant_admin';
+      const { data, error } = await supabase.functions.invoke('admin-operations', {
+        body: { action, userId },
+      });
+
+      if (error) throw error;
+
+      toast.success(data.message);
+      await fetchUsers(); // Refresh the list
+    } catch (error: any) {
+      console.error("Error toggling admin:", error);
+      toast.error("Failed to update admin privileges");
     }
   };
 
@@ -288,6 +301,7 @@ const AdminPanel = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
                   <TableHead>Created At</TableHead>
                   <TableHead>Last Sign In</TableHead>
                   <TableHead>Actions</TableHead>
@@ -297,31 +311,51 @@ const AdminPanel = () => {
                 {users.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell className="font-medium">{user.email}</TableCell>
+                    <TableCell>
+                      {user.isAdmin ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium">
+                          <Shield className="w-3 h-3" />
+                          Admin
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">User</span>
+                      )}
+                    </TableCell>
                     <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
                     <TableCell>
-                      {user.last_sign_in_at !== "Never" 
+                      {user.last_sign_in_at 
                         ? new Date(user.last_sign_in_at).toLocaleDateString()
                         : "Never"}
                     </TableCell>
                     <TableCell>
-                      <Dialog open={resetDialogOpen && selectedUser?.id === user.id} onOpenChange={(open) => {
-                        setResetDialogOpen(open);
-                        if (!open) {
-                          setSelectedUser(null);
-                          setNewPassword("");
-                        }
-                      }}>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setSelectedUser(user)}
-                            className="gap-2"
-                          >
-                            <KeyRound className="h-4 w-4" />
-                            Reset Password
-                          </Button>
-                        </DialogTrigger>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleToggleAdmin(user.id, user.isAdmin)}
+                          className="gap-2"
+                        >
+                          <UserCog className="h-4 w-4" />
+                          {user.isAdmin ? 'Remove Admin' : 'Make Admin'}
+                        </Button>
+                        <Dialog open={resetDialogOpen && selectedUser?.id === user.id} onOpenChange={(open) => {
+                          setResetDialogOpen(open);
+                          if (!open) {
+                            setSelectedUser(null);
+                            setNewPassword("");
+                          }
+                        }}>
+                          <DialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSelectedUser(user)}
+                              className="gap-2"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                              Reset Password
+                            </Button>
+                          </DialogTrigger>
                         <DialogContent className="border-border bg-card">
                           <DialogHeader>
                             <DialogTitle>Reset Password</DialogTitle>
@@ -349,7 +383,8 @@ const AdminPanel = () => {
                             </Button>
                           </div>
                         </DialogContent>
-                      </Dialog>
+                        </Dialog>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

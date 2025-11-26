@@ -3,8 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { FileUpload } from "@/components/FileUpload";
 import { FileGrid } from "@/components/FileGrid";
+import { CreateFolderDialog } from "@/components/CreateFolderDialog";
 import { Button } from "@/components/ui/button";
-import { CloudUpload, LogOut, Shield, Settings } from "lucide-react";
+import { CloudUpload, LogOut, Shield, Settings, Share2 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 
 const Index = () => {
@@ -84,6 +85,14 @@ const Index = () => {
             )}
             <Button
               variant="outline"
+              onClick={() => navigate("/shared")}
+              className="gap-2 border-border hover:bg-secondary"
+            >
+              <Share2 className="w-4 h-4" />
+              Shared With Me
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => navigate("/settings")}
               className="gap-2 border-border hover:bg-secondary"
             >
@@ -103,7 +112,10 @@ const Index = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8 space-y-8">
-        <FileUpload onUploadComplete={loadFiles} />
+        <div className="flex gap-4">
+          <FileUpload onUploadComplete={loadFiles} />
+          <CreateFolderDialog onFolderCreated={loadFiles} />
+        </div>
         
         <div>
           <h2 className="text-2xl font-bold mb-6">Your Files</h2>
