@@ -123,6 +123,20 @@ export const UploadQueue = ({ tasks, onPause, onResume, onRemove, onClearComplet
               </div>
             </div>
 
+            {task.status === 'compressing' && (
+              <>
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <p className="text-xs text-muted-foreground">Compressing image...</p>
+                </div>
+                {task.originalSize && task.compressedSize && (
+                  <p className="text-xs text-green-600 dark:text-green-400">
+                    Reduced from {formatFileSize(task.originalSize)} to {formatFileSize(task.compressedSize)}
+                  </p>
+                )}
+              </>
+            )}
+
             {task.status === 'uploading' && (
               <>
                 <Progress value={task.progress} className="h-1.5" />

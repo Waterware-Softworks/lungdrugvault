@@ -1,12 +1,13 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import imageCompression from 'browser-image-compression';
 
 export interface UploadTask {
   id: string;
   file: File;
   progress: number;
-  status: 'pending' | 'uploading' | 'paused' | 'completed' | 'failed';
+  status: 'pending' | 'uploading' | 'paused' | 'completed' | 'failed' | 'compressing';
   speed: number;
   timeRemaining: number | null;
   error?: string;
@@ -14,12 +15,61 @@ export interface UploadTask {
   startTime?: number;
   pausedAt?: number;
   uploadedBytes?: number;
+  originalSize?: number;
+  compressedSize?: number;
 }
 
 export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: string | null) => {
   const [tasks, setTasks] = useState<UploadTask[]>([]);
   const abortControllers = useRef<Map<string, AbortController>>(new Map());
   const uploadIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const processingRef = useRef(false);
+
+  const compressFile = async (file: File): Promise<File> => {
+    // Only compress images
+    if (!file.type.startsWith('image/')) {
+      return file;
+    }
+
+    try {
+      const options = {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 1920,
+        useWebWorker: true,
+      };
+      
+      const compressedFile = await imageCompression(file, options);
+      return new File([compressedFile], file.name, { type: file.type });
+    } catch (error) {
+      console.error('Compression failed:', error);
+      return file; // Return original if compression fails
+    }
+  };
+
+  const processQueue = useCallback(async () => {
+    if (processingRef.current) return;
+    
+    setTasks(currentTasks => {
+      const uploadingTask = currentTasks.find(t => t.status === 'uploading' || t.status === 'compressing');
+      if (uploadingTask) return currentTasks;
+
+      const nextTask = currentTasks.find(t => t.status === 'pending');
+      if (!nextTask) {
+        processingRef.current = false;
+        return currentTasks;
+      }
+
+      processingRef.current = true;
+      // Start upload asynchronously
+      setTimeout(() => startUpload(nextTask.id), 0);
+      
+      return currentTasks;
+    });
+  }, []);
+
+  useEffect(() => {
+    processQueue();
+  }, [tasks, processQueue]);
 
   const addToQueue = useCallback((files: File[]) => {
     const newTasks: UploadTask[] = files.map(file => ({
@@ -29,23 +79,34 @@ export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: s
       status: 'pending',
       speed: 0,
       timeRemaining: null,
+      originalSize: file.size,
     }));
 
     setTasks(prev => [...prev, ...newTasks]);
-    
-    // Start uploading the first pending task
-    newTasks.forEach(task => {
-      if (tasks.length === 0 || tasks.every(t => t.status !== 'uploading')) {
-        setTimeout(() => startUpload(task.id), 100);
-      }
-    });
-  }, [tasks]);
+  }, []);
 
   const startUpload = useCallback(async (taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
-    if (!task || task.status === 'uploading') return;
+    setTasks(prev => {
+      const task = prev.find(t => t.id === taskId);
+      if (!task || task.status === 'uploading') return prev;
+      return prev.map(t => 
+        t.id === taskId ? { ...t, status: 'compressing' as const } : t
+      );
+    });
 
     try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      // Compress file if it's an image
+      let fileToUpload = task.file;
+      if (task.file.type.startsWith('image/')) {
+        fileToUpload = await compressFile(task.file);
+        setTasks(prev => prev.map(t => 
+          t.id === taskId ? { ...t, compressedSize: fileToUpload.size } : t
+        ));
+      }
+
       setTasks(prev => prev.map(t => 
         t.id === taskId ? { ...t, status: 'uploading' as const, startTime: Date.now() } : t
       ));
@@ -59,14 +120,12 @@ export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: s
       const fileExt = task.file.name.split('.').pop();
       const storagePath = `${user.id}/${Date.now()}.${fileExt}`;
 
-      // Create abort controller for this upload
       const controller = new AbortController();
       abortControllers.current.set(taskId, controller);
 
       const startTime = Date.now();
-      const fileSize = task.file.size;
+      const fileSize = fileToUpload.size;
 
-      // Progress estimation
       const progressInterval = setInterval(() => {
         setTasks(prev => {
           const currentTask = prev.find(t => t.id === taskId);
@@ -96,7 +155,7 @@ export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: s
 
       const { error: uploadError } = await supabase.storage
         .from('user-files')
-        .upload(storagePath, task.file, {
+        .upload(storagePath, fileToUpload, {
           cacheControl: '3600',
           upsert: false
         });
@@ -115,7 +174,7 @@ export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: s
         .insert({
           user_id: user.id,
           name: task.file.name,
-          size: task.file.size,
+          size: fileToUpload.size,
           mime_type: task.file.type,
           storage_path: storagePath,
           folder_id: currentFolderId,
@@ -128,16 +187,10 @@ export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: s
       ));
 
       toast.success(`${task.file.name} uploaded successfully!`);
+      onUploadComplete();
       
-      // Start next pending task
-      setTimeout(() => {
-        const nextTask = tasks.find(t => t.status === 'pending');
-        if (nextTask) {
-          startUpload(nextTask.id);
-        } else {
-          onUploadComplete();
-        }
-      }, 500);
+      processingRef.current = false;
+      processQueue();
 
     } catch (error: any) {
       const interval = uploadIntervals.current.get(taskId);
@@ -152,11 +205,17 @@ export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: s
           : t
       ));
       
-      toast.error(`Failed to upload ${task.file.name}`);
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+        toast.error(`Failed to upload ${task.file.name}`);
+      }
+      
+      processingRef.current = false;
+      processQueue();
     } finally {
       abortControllers.current.delete(taskId);
     }
-  }, [tasks, onUploadComplete, currentFolderId]);
+  }, [tasks, onUploadComplete, currentFolderId, processQueue]);
 
   const pauseUpload = useCallback((taskId: string) => {
     const interval = uploadIntervals.current.get(taskId);
@@ -174,11 +233,17 @@ export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: s
     setTasks(prev => prev.map(t => 
       t.id === taskId ? { ...t, status: 'paused' as const, pausedAt: Date.now() } : t
     ));
+    
+    processingRef.current = false;
   }, []);
 
   const resumeUpload = useCallback((taskId: string) => {
-    startUpload(taskId);
-  }, [startUpload]);
+    setTasks(prev => prev.map(t => 
+      t.id === taskId ? { ...t, status: 'pending' as const } : t
+    ));
+    processingRef.current = false;
+    processQueue();
+  }, [processQueue]);
 
   const removeTask = useCallback((taskId: string) => {
     const interval = uploadIntervals.current.get(taskId);
@@ -194,7 +259,9 @@ export const useUploadQueue = (onUploadComplete: () => void, currentFolderId?: s
     }
 
     setTasks(prev => prev.filter(t => t.id !== taskId));
-  }, []);
+    processingRef.current = false;
+    processQueue();
+  }, [processQueue]);
 
   const clearCompleted = useCallback(() => {
     setTasks(prev => prev.filter(t => t.status !== 'completed'));
