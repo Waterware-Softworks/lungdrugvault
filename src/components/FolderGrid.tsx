@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Folder, Trash2, Share2, FolderOpen, Users } from "lucide-react";
+import { Folder, Trash2, Share2, FolderOpen, Users, FolderInput } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardFooter } from "./ui/card";
 import {
@@ -46,6 +46,7 @@ export const FolderGrid = ({ folders, onFolderDeleted, onFolderClick }: FolderGr
   const [selectedFolder, setSelectedFolder] = useState<any>(null);
   const [shareEmail, setShareEmail] = useState("");
   const [users, setUsers] = useState<any[]>([]);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   const loadUsers = async () => {
     try {
@@ -80,6 +81,41 @@ export const FolderGrid = ({ folders, onFolderDeleted, onFolderClick }: FolderGr
     }
   };
 
+  const handleDragOver = (e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolder(folderId);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolder(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolder(null);
+
+    const fileId = e.dataTransfer.getData('text/plain');
+    if (!fileId) return;
+
+    try {
+      const { error } = await supabase
+        .from('files')
+        .update({ folder_id: folderId })
+        .eq('id', fileId);
+
+      if (error) throw error;
+
+      toast.success("File moved to folder successfully!");
+      onFolderDeleted(); // Refresh the view
+    } catch (error: any) {
+      toast.error(error.message || "Failed to move file");
+    }
+  };
+
   if (folders.length === 0) {
     return null;
   }
@@ -89,11 +125,21 @@ export const FolderGrid = ({ folders, onFolderDeleted, onFolderClick }: FolderGr
       {folders.map((folder) => (
         <Card
           key={folder.id}
-          className="group bg-card/50 backdrop-blur-sm border-border hover:border-primary/50 transition-smooth overflow-hidden cursor-pointer"
+          onDragOver={(e) => handleDragOver(e, folder.id)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, folder.id)}
+          className={`group bg-card/50 backdrop-blur-sm border-border hover:border-primary/50 transition-smooth overflow-hidden cursor-pointer ${
+            dragOverFolder === folder.id ? 'border-primary border-2 bg-primary/10 scale-105' : ''
+          }`}
         >
           <CardContent className="p-6" onClick={() => onFolderClick(folder.id)}>
-            <div className="flex items-center justify-center h-32 mb-4 bg-secondary/50 rounded-xl">
+            <div className="flex items-center justify-center h-32 mb-4 bg-secondary/50 rounded-xl relative">
               <Folder className="w-16 h-16 text-primary" />
+              {dragOverFolder === folder.id && (
+                <div className="absolute inset-0 flex items-center justify-center bg-primary/20 rounded-xl">
+                  <FolderInput className="w-12 h-12 text-primary animate-pulse" />
+                </div>
+              )}
             </div>
             <h3 className="font-semibold truncate mb-1" title={folder.name}>
               {folder.name}

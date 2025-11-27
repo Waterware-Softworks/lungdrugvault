@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { FileIcon, Trash2, Share2, Download, Copy, Check, Users, Play, FolderInput } from "lucide-react";
+import { FileIcon, Trash2, Share2, Download, Copy, Check, Users, Play, FolderInput, Eye } from "lucide-react";
 import { VideoPlayer } from "./VideoPlayer";
+import { FilePreview } from "./FilePreview";
 import { Button } from "./ui/button";
 import {
   Card,
@@ -59,8 +60,12 @@ export const FileGrid = ({ files, onFileDeleted, isSharedView = false, currentFo
   const [videoPlayerOpen, setVideoPlayerOpen] = useState(false);
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFileName, setVideoFileName] = useState("");
+  const [videoStoragePath, setVideoStoragePath] = useState("");
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
+  const [draggedFile, setDraggedFile] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -179,10 +184,35 @@ export const FileGrid = ({ files, onFileDeleted, isSharedView = false, currentFo
 
       setVideoUrl(data.signedUrl);
       setVideoFileName(file.name);
+      setVideoStoragePath(file.storage_path);
       setVideoPlayerOpen(true);
     } catch (error: any) {
       toast.error(error.message || "Failed to load video");
     }
+  };
+
+  const openPreview = (file: File) => {
+    setPreviewFile(file);
+    setPreviewOpen(true);
+  };
+
+  const canPreview = (mimeType: string) => {
+    return (
+      mimeType.startsWith('image/') ||
+      mimeType === 'application/pdf' ||
+      mimeType.startsWith('text/') ||
+      mimeType === 'application/json'
+    );
+  };
+
+  const handleDragStart = (e: React.DragEvent, fileId: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', fileId);
+    setDraggedFile(fileId);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedFile(null);
   };
 
   const moveFileToFolder = async () => {
@@ -222,12 +252,26 @@ export const FileGrid = ({ files, onFileDeleted, isSharedView = false, currentFo
         onClose={() => setVideoPlayerOpen(false)}
         videoUrl={videoUrl}
         fileName={videoFileName}
+        storagePath={videoStoragePath}
+      />
+      <FilePreview
+        isOpen={previewOpen}
+        onClose={() => {
+          setPreviewOpen(false);
+          setPreviewFile(null);
+        }}
+        file={previewFile}
       />
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {files.map((file) => (
         <Card
           key={file.id}
-          className="group bg-card/50 backdrop-blur-sm border-border hover:border-primary/50 transition-smooth overflow-hidden"
+          draggable
+          onDragStart={(e) => handleDragStart(e, file.id)}
+          onDragEnd={handleDragEnd}
+          className={`group bg-card/50 backdrop-blur-sm border-border hover:border-primary/50 transition-smooth overflow-hidden cursor-move ${
+            draggedFile === file.id ? 'opacity-50 scale-95' : ''
+          }`}
         >
           <CardContent className="p-6">
             <div 
@@ -256,7 +300,7 @@ export const FileGrid = ({ files, onFileDeleted, isSharedView = false, currentFo
             </div>
           </CardContent>
           <CardFooter className="flex gap-2 p-4 pt-0">
-            {isVideoFile(file.mime_type) && (
+            {isVideoFile(file.mime_type) ? (
               <Button
                 size="sm"
                 variant="ghost"
@@ -265,7 +309,16 @@ export const FileGrid = ({ files, onFileDeleted, isSharedView = false, currentFo
               >
                 <Play className="w-4 h-4" />
               </Button>
-            )}
+            ) : canPreview(file.mime_type) ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="flex-1 hover:bg-primary/10 hover:text-primary"
+                onClick={() => openPreview(file)}
+              >
+                <Eye className="w-4 h-4" />
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant="ghost"
